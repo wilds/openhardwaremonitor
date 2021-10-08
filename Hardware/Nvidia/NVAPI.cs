@@ -1,17 +1,19 @@
 ﻿/*
- 
+
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
- 
+
   Copyright (C) 2009-2020 Michael Möller <mmoeller@openhardwaremonitor.org>
 	Copyright (C) 2011 Christian Vallières
- 
+	Copyright (C) 2021 Ivano Selvaggi
+
 */
 
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Linq;
 
 namespace OpenHardwareMonitor.Hardware.Nvidia {
 
@@ -256,6 +258,33 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     public uint Reserved8;
   }
 
+  [StructLayout(LayoutKind.Sequential)]
+  //[StructureVersion(2)]
+  internal struct NvGPUThermalSensors {
+    public uint Version;
+    public uint Mask;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+    public uint[] Reserved;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+    public uint[] _Temperatures;
+
+    /*
+    public NvGPUThermalSensors(uint mask)
+    {
+        this = typeof(NvGPUThermalSensors).Instantiate<NvGPUThermalSensors>();
+        Mask = mask;
+    }
+    */
+
+    public float[] Temperatures
+    {
+        get
+        {
+            return _Temperatures.Select((t) => t / 256.0f).ToArray();
+        }
+    }
+  }
+
   internal class NVAPI {
 
     public const int MAX_PHYSICAL_GPUS = 64;
@@ -286,6 +315,8 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       Marshal.SizeOf(typeof(NvGPUCoolerLevels)) | 0x10000;
     public static readonly uint GPU_FAN_COOLERS_STATUS_VER = (uint)
       Marshal.SizeOf(typeof(NvFanCoolersStatus)) | 0x10000;
+    public static readonly uint GPU_THERMAL_SENSORS_VER = (uint)
+      Marshal.SizeOf(typeof(NvGPUThermalSensors)) | 0x20000;
 
     private delegate IntPtr nvapi_QueryInterfaceDelegate(uint id);
 
@@ -368,6 +399,10 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
     public delegate NvStatus NvAPI_GPU_ClientFanCoolersGetStatusDelegate(
       NvPhysicalGpuHandle gpuHandle, ref NvFanCoolersStatus fanCoolersStatus);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate NvStatus NvAPI_GPU_QueryThermalSensorsDelegate(
+      NvPhysicalGpuHandle gpuHandle, ref NvGPUThermalSensors gpuThermalSensors);
+
     private static readonly bool available;
     private static readonly nvapi_QueryInterfaceDelegate nvapi_QueryInterface;
     private static readonly NvAPI_InitializeDelegate NvAPI_Initialize;
@@ -406,6 +441,8 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
       NvAPI_GPU_GetBusId;
     public static readonly NvAPI_GPU_ClientFanCoolersGetStatusDelegate
       NvAPI_GPU_ClientFanCoolersGetStatus;
+    public static readonly NvAPI_GPU_QueryThermalSensorsDelegate
+      NvAPI_GPU_QueryThermalSensors;
 
     private NVAPI() { }
 
@@ -483,6 +520,7 @@ namespace OpenHardwareMonitor.Hardware.Nvidia {
         GetDelegate(0x2DDFB66E, out NvAPI_GPU_GetPCIIdentifiers);
         GetDelegate(0x1BE0B8E5, out NvAPI_GPU_GetBusId);
         GetDelegate(0x35AED5E8, out NvAPI_GPU_ClientFanCoolersGetStatus);
+        GetDelegate(0x65FE3AAD, out NvAPI_GPU_QueryThermalSensors);
 
         available = true;
       }
